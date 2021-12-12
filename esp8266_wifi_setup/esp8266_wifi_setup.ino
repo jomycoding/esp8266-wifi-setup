@@ -1,3 +1,5 @@
+// MQTT-Broker IP address setting is added for EEPROM(96-150)
+
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <WiFiClient.h>
@@ -16,6 +18,7 @@ void setup() {
   Serial.begin(115200);
   EEPROM.begin(512);
   delay(10);
+    
   if (restoreConfig()) {
     if (checkConnection()) {
       settingMode = false;
@@ -38,6 +41,8 @@ boolean restoreConfig() {
   Serial.println("Reading EEPROM...");
   String ssid = "";
   String pass = "";
+  String mqtt_broker = "";
+  
   if (EEPROM.read(0) != 0) {
     for (int i = 0; i < 32; ++i) {
       ssid += char(EEPROM.read(i));
@@ -49,6 +54,12 @@ boolean restoreConfig() {
     }
     Serial.print("Password: ");
     Serial.println(pass);
+    for (int i = 96; i < 160; ++i) {
+      mqtt_broker += char(EEPROM.read(i));
+    }
+    Serial.print("MQTT Broker: ");
+    Serial.println(mqtt_broker);    
+    
     WiFi.begin(ssid.c_str(), pass.c_str());
     return true;
   }
@@ -79,15 +90,18 @@ void startWebServer() {
   if (settingMode) {
     Serial.print("Starting Web Server at ");
     Serial.println(WiFi.softAPIP());
+    
     webServer.on("/settings", []() {
       String s = "<h1>Wi-Fi Settings</h1><p>Please enter your password by selecting the SSID.</p>";
       s += "<form method=\"get\" action=\"setap\"><label>SSID: </label><select name=\"ssid\">";
       s += ssidList;
-      s += "</select><br>Password: <input name=\"pass\" length=64 type=\"password\"><input type=\"submit\"></form>";
+      s += "</select><br>Password: <input name=\"pass\" length=64 type=\"password\">";
+      s += "<br>MQTT Broker address: <input name=\"mqtt_broker\" length=64 type=\"text\"><input type=\"submit\"></form>";
       webServer.send(200, "text/html", makePage("Wi-Fi Settings", s));
     });
+    
     webServer.on("/setap", []() {
-      for (int i = 0; i < 96; ++i) {
+      for (int i = 0; i < 160; ++i) {
         EEPROM.write(i, 0);
       }
       String ssid = urlDecode(webServer.arg("ssid"));
@@ -96,6 +110,10 @@ void startWebServer() {
       String pass = urlDecode(webServer.arg("pass"));
       Serial.print("Password: ");
       Serial.println(pass);
+      String mqtt_broker = urlDecode(webServer.arg("mqtt_broker"));
+      Serial.print("MQTT Broker: ");
+      Serial.println(mqtt_broker);
+      
       Serial.println("Writing SSID to EEPROM...");
       for (int i = 0; i < ssid.length(); ++i) {
         EEPROM.write(i, ssid[i]);
@@ -104,7 +122,12 @@ void startWebServer() {
       for (int i = 0; i < pass.length(); ++i) {
         EEPROM.write(32 + i, pass[i]);
       }
+      Serial.println("Writing MQTT Broker Address to EEPROM...");
+      for (int i = 0; i < mqtt_broker.length(); ++i) {
+        EEPROM.write(96 + i, mqtt_broker[i]);
+      }           
       EEPROM.commit();
+      
       Serial.println("Write EEPROM done!");
       String s = "<h1>Setup complete.</h1><p>device will be connected to \"";
       s += ssid;
@@ -112,18 +135,23 @@ void startWebServer() {
       webServer.send(200, "text/html", makePage("Wi-Fi Settings", s));
       ESP.restart();
     });
+    
     webServer.onNotFound([]() {
       String s = "<h1>AP mode</h1><p><a href=\"/settings\">Wi-Fi Settings</a></p>";
       webServer.send(200, "text/html", makePage("AP mode", s));
     });
   }
+  
   else {
     Serial.print("Starting Web Server at ");
     Serial.println(WiFi.localIP());
-    webServer.on("/", []() {
+
+    
+    webServer.on("/", []() {      
       String s = "<h1>STA mode</h1><p><a href=\"/reset\">Reset Wi-Fi Settings</a></p>";
       webServer.send(200, "text/html", makePage("STA mode", s));
     });
+     
     webServer.on("/reset", []() {
       for (int i = 0; i < 96; ++i) {
         EEPROM.write(i, 0);
@@ -206,4 +234,3 @@ String urlDecode(String input) {
   s.replace("%60", "`");
   return s;
 }
-
